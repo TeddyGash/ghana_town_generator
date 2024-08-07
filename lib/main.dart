@@ -42,11 +42,11 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
         print('Database Initialised successfully');
       }
 
-      await clearDatabase(db);
+      /*await clearDatabase(db);
       if (kDebugMode) {
         print('Database cleared successfully');
       }
-
+*/
       final count = await db.query('towns').then((value) => value.length);
       if (count == 0) {
         await loadCSVAndInsertIntoDatabase(db);
