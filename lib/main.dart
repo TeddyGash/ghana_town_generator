@@ -21,43 +21,44 @@ class GhanaTownGenerator extends StatefulWidget {
 class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
   String generatedTown = '';
   List<String> ghanaianTowns = [];
+  Database? db;
+  double _progress = 0.0;
+  bool _isUpdating = false;
+
 
   @override
   void initState() {
     super.initState();
-    _initializeDatabase();
+    _initializeDatabase().then((_) {
+      if (kDebugMode) {
+        print('Database initialized in initState');
+      }
+    });
   }
-
 
   Future<void> _initializeDatabase() async {
     try {
       final databasePath = await getDatabasesPath();
       final dbPath = join(databasePath, 'ghanaian_towns.db');
 
-      final db = await openDatabase(dbPath, version: 1, onCreate: (db, version) async {
+      db = await openDatabase(dbPath, version: 1, onCreate: (db, version) async {
         await db.execute('CREATE TABLE towns (id INTEGER PRIMARY KEY, name TEXT)');
       });
 
       if (kDebugMode) {
-        print('Database Initialised successfully');
+        print('Database Initialized successfully');
       }
 
-      /*await clearDatabase(db);
-      if (kDebugMode) {
-        print('Database cleared successfully');
-      }
-*/
-      final count = await db.query('towns').then((value) => value.length);
+      final count = await db!.query('towns').then((value) => value.length);
       if (count == 0) {
-        await loadCSVAndInsertIntoDatabase(db);
+        await loadCSVAndInsertIntoDatabase(db!);
         if (kDebugMode) {
-          print('Towns loaded from csv to database successfully');
+          print('Towns loaded from CSV to database successfully');
         }
-
       }
 
       // Fetch towns from the database
-      await getTownsFromDatabase(db);
+      await getTownsFromDatabase(db!);
     } catch (error) {
       if (kDebugMode) {
         print('Error initializing database: $error');
@@ -71,23 +72,13 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
       ghanaianTowns = List.generate(maps.length, (i) {
         return maps[i]['name'] as String;
       });
-      // Debugging: Print the list contents and length
+
       if (kDebugMode) {
         print('Loaded towns: $ghanaianTowns');
-      }
-      if (kDebugMode) {
         print('Length of ghanaianTowns: ${ghanaianTowns.length}');
       }
+
       setState(() {}); // Update the state to refresh the UI with the new data
-
-      // Debugging: Print the list contents and length
-      if (kDebugMode) {
-        print('Loaded towns: $ghanaianTowns');
-      }
-      if (kDebugMode) {
-        print('Length of ghanaianTowns: ${ghanaianTowns.length}');
-      }
-
     } catch (error) {
       if (kDebugMode) {
         print('Error fetching towns from database: $error');
@@ -99,8 +90,6 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
     try {
       // Clear existing data from the 'towns' table
       await db.delete('towns');
-
-
     } catch (error) {
       if (kDebugMode) {
         print('Error clearing database: $error');
@@ -121,12 +110,6 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
       print('Length of Parsed CSV Data: ${parsedData.length}');
     }
 
-
-    // Initialize your database and perform insertions
-    // Note: Ensure your database initialization and transactions are correct
-
-    // final Database db = await initializeDatabase(); // Replace with your actual database initialization method
-
     await db.transaction((txn) async {
       // Skip the header row if it exists
       for (int i = 0; i < parsedData.length; i++) {
@@ -142,47 +125,6 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
       print('Towns loaded from CSV to database successfully');
     }
   }
-
-
-  /*Future<void> loadTownNamesFromCSV(Database db) async {
-    try {
-      // Clear existing data from the 'towns' table
-      //await db.delete('towns');
-
-      // Load CSV file
-      final bytes = await rootBundle.load('assets/ghanaian_towns.csv');
-      final string = utf8.decode(bytes.buffer.asUint8List());
-      final List<List<dynamic>> csvData = const CsvToListConverter().convert(string);
-
-      // Debugging: Print the CSV data
-      if (kDebugMode) {
-        print('CSV Data: $csvData');
-        print('Length of CSV Data: ${csvData.length}');
-      }
-
-      // Insert new data into the 'towns' table
-      await db.transaction((txn) async {
-        for (int i = 1; i < csvData.length; i++) { // Start from 1 to skip header
-          final column = csvData[i];
-          final townName = column[0] as String;
-          if (townName.isNotEmpty) {
-            await txn.insert('towns', {'name': townName});
-          }
-        }
-      });
-
-      // Optionally verify the number of rows inserted
-      final count = await db.query('towns').then((value) => value.length);
-      if (kDebugMode) {
-        print('Number of towns inserted: $count');
-      }
-    } catch (error) {
-      if (kDebugMode) {
-        print('Error loading towns from CSV: $error');
-      }
-    }
-  }*/
-
 
   void generateRandomTown() {
     if (ghanaianTowns.isNotEmpty) {
@@ -204,6 +146,74 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
       });
     }
   }
+
+  Future<void> resetUI() async {
+    setState(() {
+      generatedTown = '';
+    });
+  }
+
+  Future<void> updateDatabase() async {
+    try {
+      if (db == null) {
+        if (kDebugMode) {
+          print('Database is not initialized');
+        }
+        return;
+      }
+
+      setState(() {
+        _isUpdating = true;
+        _progress = 0.0; // Reset progress at the start
+      });
+
+      if (kDebugMode) {
+        print('Clearing database...');
+      }
+      await clearDatabase(db!);
+
+      if (kDebugMode) {
+        print('Loading towns from CSV...');
+      }
+      final String csvData = await rootBundle.loadString('assets/ghanaian_towns.csv');
+      final List<List<dynamic>> parsedData = const CsvToListConverter().convert(csvData, eol: "\n");
+
+      final totalRows = parsedData.length;
+      int insertedRows = 0;
+
+      await db!.transaction((txn) async {
+        for (int i = 0; i < totalRows; i++) {
+          final row = parsedData[i];
+          final townName = row[0] as String;
+          if (townName.isNotEmpty) {
+            await txn.insert('towns', {'name': townName});
+          }
+          insertedRows++;
+
+          // Update progress
+          setState(() {
+            _progress = insertedRows / totalRows;
+          });
+        }
+      });
+
+      setState(() {
+        _isUpdating = false;
+        resetUI();
+        if (kDebugMode) {
+          print('Database update complete.');
+        }
+      });
+    } catch (error) {
+      setState(() {
+        _isUpdating = false;
+      });
+      if (kDebugMode) {
+        print('Error during database update: $error');
+      }
+    }
+  }
+
 
 
   @override
@@ -232,11 +242,63 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: generateRandomTown,
-                  child: const Text('Generate Town'),
-                ),
+                const SizedBox(height: 40),
+                if (_isUpdating) ...[
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        const Text('Updating Database...'),
+                        const SizedBox(height: 10),
+                        LinearProgressIndicator(value: _progress),
+                        const SizedBox(height: 8),
+                        Text('${(_progress * 100).toStringAsFixed(0)}%'),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Center(
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: 200,
+                          child: ElevatedButton(
+                            onPressed: generateRandomTown,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green[700], // Darker green
+                              foregroundColor: Colors.white, // White text color
+                            ),
+                            child: const Text('Generate Town'),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: 200,
+                          child: ElevatedButton(
+                            onPressed: resetUI,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue[700], // Darker blue
+                              foregroundColor: Colors.white, // White text color
+                            ),
+                            child: const Text('Reset'),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: 200,
+                          child: ElevatedButton(
+                            onPressed: updateDatabase,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red[700], // Darker red
+                              foregroundColor: Colors.white, // White text color
+                            ),
+                            child: const Text('Update Database'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -244,4 +306,5 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
       ),
     );
   }
+
 }
