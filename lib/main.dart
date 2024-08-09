@@ -22,6 +22,9 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
   String generatedTown = '';
   List<String> ghanaianTowns = [];
   Database? db;
+  double _progress = 0.0;
+  bool _isUpdating = false;
+
 
   @override
   void initState() {
@@ -159,6 +162,11 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
         return;
       }
 
+      setState(() {
+        _isUpdating = true;
+        _progress = 0.0; // Reset progress at the start
+      });
+
       if (kDebugMode) {
         print('Clearing database...');
       }
@@ -167,18 +175,46 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
       if (kDebugMode) {
         print('Loading towns from CSV...');
       }
-      await loadCSVAndInsertIntoDatabase(db!);
-      resetUI();
+      final String csvData = await rootBundle.loadString('assets/ghanaian_towns.csv');
+      final List<List<dynamic>> parsedData = const CsvToListConverter().convert(csvData, eol: "\n");
 
-      if (kDebugMode) {
-        print('Database update complete.');
-      }
+      final totalRows = parsedData.length;
+      int insertedRows = 0;
+
+      await db!.transaction((txn) async {
+        for (int i = 0; i < totalRows; i++) {
+          final row = parsedData[i];
+          final townName = row[0] as String;
+          if (townName.isNotEmpty) {
+            await txn.insert('towns', {'name': townName});
+          }
+          insertedRows++;
+
+          // Update progress
+          setState(() {
+            _progress = insertedRows / totalRows;
+          });
+        }
+      });
+
+      setState(() {
+        _isUpdating = false;
+        resetUI();
+        if (kDebugMode) {
+          print('Database update complete.');
+        }
+      });
     } catch (error) {
+      setState(() {
+        _isUpdating = false;
+      });
       if (kDebugMode) {
         print('Error during database update: $error');
       }
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -206,21 +242,63 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: generateRandomTown,
-                  child: const Text('Generate Town'),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: resetUI,
-                  child: const Text('Reset UI'),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: updateDatabase,
-                  child: const Text('Update Database'),
-                ),
+                const SizedBox(height: 40),
+                if (_isUpdating) ...[
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        const Text('Updating Database...'),
+                        const SizedBox(height: 10),
+                        LinearProgressIndicator(value: _progress),
+                        const SizedBox(height: 8),
+                        Text('${(_progress * 100).toStringAsFixed(0)}%'),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Center(
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: 200,
+                          child: ElevatedButton(
+                            onPressed: generateRandomTown,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green[700], // Darker green
+                              foregroundColor: Colors.white, // White text color
+                            ),
+                            child: const Text('Generate Town'),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: 200,
+                          child: ElevatedButton(
+                            onPressed: resetUI,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue[700], // Darker blue
+                              foregroundColor: Colors.white, // White text color
+                            ),
+                            child: const Text('Reset'),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: 200,
+                          child: ElevatedButton(
+                            onPressed: updateDatabase,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red[700], // Darker red
+                              foregroundColor: Colors.white, // White text color
+                            ),
+                            child: const Text('Update Database'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -228,4 +306,5 @@ class _GhanaTownGeneratorState extends State<GhanaTownGenerator> {
       ),
     );
   }
+
 }
