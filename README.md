@@ -2,6 +2,9 @@
 
 A random Ghanaian town name generator
 
+A demo app to test out cross-platform functionality ie working on the same project from different devices as well as database operations.
+
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
